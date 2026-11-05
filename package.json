@@ -16,6 +16,9 @@
     "dotenv": "^8.2.0",
     "yargs": "^17.7.2"
   },
+  "overrides": {
+    "form-data": "4.0.6"
+  },
   "author": "Tarik Ermis <tarik@n3tz.io>",
   "license": "MIT",
   "directories": {
