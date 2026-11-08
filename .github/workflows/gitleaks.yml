@@ -1,0 +1,115 @@
+name: Gitleaks secret scan
+
+on:
+  pull_request_target:
+  push:
+    branches: [main, master]
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitleaks-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      (github.actor == 'tarikermis' && github.triggering_actor == 'tarikermis')
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout trusted base history
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          path: repo
+          persist-credentials: false
+
+      - name: Checkout default branch
+        if: github.event_name != 'pull_request_target'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          path: repo
+          persist-credentials: false
+
+      - name: Materialize the trusted scan policy
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          install -m 600 /dev/null "$RUNNER_TEMP/gitleaks.toml"
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request_target" && "$(git -C repo cat-file -t "$BASE_SHA:.gitleaks.toml" 2>/dev/null || true)" == "blob" ]]; then
+            git -C repo show "$BASE_SHA:.gitleaks.toml" > "$RUNNER_TEMP/gitleaks.toml"
+          else
+            printf '%s\n' 'title = "trusted default policy"' '' '[extend]' 'useDefault = true' > "$RUNNER_TEMP/gitleaks.toml"
+          fi
+
+      - name: Bind the pull request head to the trusted base repository
+        if: github.event_name == 'pull_request_target'
+        env:
+          PR_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        working-directory: repo
+        run: |
+          set -Eeuo pipefail
+          [[ "$PR_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git remote add pull-request "https://github.com/${PR_REPOSITORY}.git"
+          git fetch --no-tags pull-request "$HEAD_SHA"
+          git checkout --detach "$HEAD_SHA"
+
+      - name: Scan the exact pull request range
+        if: github.event_name == 'pull_request_target'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git -C repo cat-file -e "$BASE_SHA^{commit}"
+          git -C repo cat-file -e "$HEAD_SHA^{commit}"
+          log_file="$RUNNER_TEMP/gitleaks-pr.log"
+          set +e
+          docker run --rm --network=none \
+            --volume "$GITHUB_WORKSPACE/repo:/repo:ro" \
+            --volume "$RUNNER_TEMP:/trusted:ro" \
+            --workdir /repo \
+            ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 \
+            git --config /trusted/gitleaks.toml --log-opts="$BASE_SHA..$HEAD_SHA" \
+            --no-banner --no-color --redact --log-level error /repo >"$log_file" 2>&1
+          status=$?
+          set -e
+          rm -f -- "$log_file"
+          if [ "$status" -ne 0 ]; then echo "::error::Gitleaks found a secret in the pull request range. Details are suppressed."; exit "$status"; fi
+
+      - name: Scan complete history
+        if: github.event_name != 'pull_request_target'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          log_file="$RUNNER_TEMP/gitleaks-history.log"
+          set +e
+          docker run --rm --network=none \
+            --volume "$GITHUB_WORKSPACE/repo:/repo:ro" \
+            --volume "$RUNNER_TEMP:/trusted:ro" \
+            --workdir /repo \
+            ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 \
+            git --config /trusted/gitleaks.toml --log-opts="--all" \
+            --no-banner --no-color --redact --log-level error /repo >"$log_file" 2>&1
+          status=$?
+          set -e
+          rm -f -- "$log_file"
+          if [ "$status" -ne 0 ]; then echo "::error::Gitleaks found a secret in repository history. Details are suppressed."; exit "$status"; fi
