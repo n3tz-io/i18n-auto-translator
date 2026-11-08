@@ -1,0 +1,50 @@
+name: Gitleaks advisory PR scan
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitleaks-advisory-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  advisory:
+    name: advisory-scan
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login == 'tarikermis' &&
+      github.actor == 'tarikermis' &&
+      github.triggering_actor == 'tarikermis'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout the exact pull request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan the exact pull request range
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ && "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "$BASE_SHA^{commit}"
+          git cat-file -e "$HEAD_SHA^{commit}"
+          policy="$RUNNER_TEMP/gitleaks.toml"
+          printf '%s\n' 'title = "trusted default policy"' '' '[extend]' 'useDefault = true' > "$policy"
+          log_file="$RUNNER_TEMP/gitleaks-advisory.log"
+          set +e
+          docker run --rm --network=none --volume "$GITHUB_WORKSPACE:/repo:ro" --volume "$RUNNER_TEMP:/trusted:ro" --workdir /repo \
+            ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 \
+            git --config /trusted/gitleaks.toml --log-opts="$BASE_SHA..$HEAD_SHA" --no-banner --no-color --redact --log-level error /repo >"$log_file" 2>&1
+          status=$?
+          set -e
+          rm -f -- "$log_file"
+          if [ "$status" -ne 0 ]; then echo "::error::Gitleaks found a secret in the pull request range. Details are suppressed."; exit "$status"; fi

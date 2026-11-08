@@ -1,0 +1,4 @@
+title = "i18n-auto-translator Gitleaks policy"
+
+[extend]
+useDefault = true
