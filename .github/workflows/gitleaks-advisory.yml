@@ -39,11 +39,21 @@ jobs:
           git cat-file -e "$HEAD_SHA^{commit}"
           policy="$RUNNER_TEMP/gitleaks.toml"
           printf '%s\n' 'title = "trusted default policy"' '' '[extend]' 'useDefault = true' > "$policy"
+          install -m 600 /dev/null "$RUNNER_TEMP/gitleaksignore"
+          if [[ "$(git cat-file -t "$BASE_SHA:.gitleaksignore" 2>/dev/null || true)" == "blob" ]]; then
+            git show "$BASE_SHA:.gitleaksignore" > "$RUNNER_TEMP/gitleaksignore"
+          fi
+          rm -f -- .gitleaksignore
+          # A .gitattributes in the scanned tree (worktree or index) can mark paths -diff/binary and hide them from git log -p:
+          # remove the files, the local override and the index entries so only git's built-in defaults apply.
+          find . -path ./.git -prune -o -name .gitattributes -exec rm -rf -- {} +
+          rm -f -- .git/info/attributes
+          git read-tree --empty
           log_file="$RUNNER_TEMP/gitleaks-advisory.log"
           set +e
           docker run --rm --network=none --volume "$GITHUB_WORKSPACE:/repo:ro" --volume "$RUNNER_TEMP:/trusted:ro" --workdir /repo \
             ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 \
-            git --config /trusted/gitleaks.toml --log-opts="$BASE_SHA..$HEAD_SHA" --no-banner --no-color --redact --log-level error /repo >"$log_file" 2>&1
+            git --config /trusted/gitleaks.toml --gitleaks-ignore-path /trusted/gitleaksignore --ignore-gitleaks-allow --log-opts="$BASE_SHA..$HEAD_SHA" --no-banner --no-color --redact --log-level error /repo >"$log_file" 2>&1
           status=$?
           set -e
           rm -f -- "$log_file"
