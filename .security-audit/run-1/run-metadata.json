@@ -1,0 +1,36 @@
+{
+  "run_id": "i18n-auto-translator-run-1",
+  "repo": "i18n-auto-translator",
+  "target": "/home/tarik/wt/secaudit/i18n-auto-translator",
+  "source_ref": "a50995a94e1c6ea45a5b953bc10f748d775d055b",
+  "profile": "standard",
+  "scope_paths": [
+    "."
+  ],
+  "budget": 30,
+  "execution_policy": "sandboxed-source-and-local-only",
+  "selected_companion_files": [
+    "ATTACK-CLASSES.md",
+    "WEB-PROTOCOL-AND-AUTH.md",
+    "CLIENT-SIDE.md",
+    "CLOUD-AND-DEPLOYMENT.md",
+    "SUPPLY-CHAIN-AND-RELEASE.md",
+    "DATA-ISOLATION-AND-LIFECYCLE.md",
+    "AI-AND-LLM.md",
+    "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md",
+    "PROTOCOLS-RPC-AND-MESSAGING.md"
+  ],
+  "prior_run_paths": [],
+  "shared_file_owners": [
+    "parent"
+  ],
+  "run_status": "complete",
+  "agents_spent": 8,
+  "coverage_critic_final": "stop=true for retained scope; source gaps reviewed",
+  "phase3_verifiers": 1,
+  "phase5_verifiers": 1,
+  "validators": {
+    "findings": "PASS",
+    "coverage": "PASS"
+  }
+}

@@ -1,0 +1,61 @@
+[
+  {
+    "coverage_id": "i18n-auto-translator%23source::i18n-auto-translator%23security-boundary::all-in-scope::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "i18n-auto-translator#source",
+      "boundary": "i18n-auto-translator#security-boundary",
+      "subsystem": "all-in-scope",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "i18n-auto-translator#source",
+    "boundary": "i18n-auto-translator#security-boundary",
+    "subsystem": "all-in-scope",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "index.js",
+      "lib/translate.js"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "i18n_audit",
+    "reviewed_paths": [
+      "index.js",
+      "lib/translate.js"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "i18n_audit",
+        "reviewed_paths": [
+          "index.js",
+          "lib/translate.js"
+        ],
+        "invariant": "Output paths must remain within intended locales directory.",
+        "method": "source",
+        "result": "Language and localesDir are used to form write path without source-visible confinement.",
+        "artifact": null
+      },
+      {
+        "agent_id": "i18n_v3",
+        "reviewed_paths": [
+          "index.js",
+          "lib/translate.js"
+        ],
+        "invariant": "Independent Phase 3 candidate verification",
+        "method": "source",
+        "result": "Source trace and blocker independently verified; retained as needs_validation.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "i18n:path-traversal-locale-output"
+    ],
+    "unresolved": [
+      "CLI-controlled localesDir/language reachability and filesystem permissions require bounded local validation."
+    ]
+  }
+]

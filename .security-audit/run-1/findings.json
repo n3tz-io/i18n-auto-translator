@@ -1,0 +1,47 @@
+[
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "i18n:path-traversal-locale-output",
+    "title": "Translator writes locale output using unconstrained language and directory inputs",
+    "description": "The translation pipeline forms output paths from a caller-controlled locales directory and language string. A crafted language containing path separators may escape the intended locale directory and overwrite an arbitrary writable JSON path.",
+    "claimed_root_cause": "Output path construction concatenates untrusted locale and directory values without canonical containment validation.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "index.js",
+        "line": 1,
+        "scope": "CLI translation options",
+        "description": "The CLI accepts locale/output configuration from caller input."
+      },
+      {
+        "kind": "propagation",
+        "file": "lib/translate.js",
+        "line": 1,
+        "scope": "processTranslations output construction",
+        "description": "Language values are interpolated into a filesystem path."
+      },
+      {
+        "kind": "sink",
+        "file": "lib/translate.js",
+        "line": 1,
+        "scope": "locale JSON write",
+        "description": "The generated path is written as a locale file."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "lib/translate.js",
+        "line": 1,
+        "description": "processTranslations writes path.join(localesDir, `${lang}.json`) without a containment check."
+      }
+    ],
+    "blockers": [
+      "Exact line and caller reachability need bounded local fixture validation.",
+      "Filesystem permissions and intended CLI trust boundary are outside source."
+    ],
+    "validation_plan": {
+      "local": "In a disposable directory, pass a language such as ../../probe and verify the resolved write stays inside localesDir and no outside file is created.",
+      "deployment": "Review who can invoke the CLI and which workspace paths are writable during translation jobs."
+    }
+  }
+]
