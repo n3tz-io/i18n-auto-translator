@@ -44,11 +44,14 @@ jobs:
             git show "$BASE_SHA:.gitleaksignore" > "$RUNNER_TEMP/gitleaksignore"
           fi
           rm -f -- .gitleaksignore
+          # A .gitattributes in the scanned tree can mark paths -diff/binary and hide them from git log -p.
+          find . -path ./.git -prune -o -name .gitattributes -delete
+          rm -f -- .git/info/attributes
           log_file="$RUNNER_TEMP/gitleaks-advisory.log"
           set +e
           docker run --rm --network=none --volume "$GITHUB_WORKSPACE:/repo:ro" --volume "$RUNNER_TEMP:/trusted:ro" --workdir /repo \
             ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 \
-            git --config /trusted/gitleaks.toml --gitleaks-ignore-path /trusted/gitleaksignore --log-opts="$BASE_SHA..$HEAD_SHA" --no-banner --no-color --redact --log-level error /repo >"$log_file" 2>&1
+            git --config /trusted/gitleaks.toml --gitleaks-ignore-path /trusted/gitleaksignore --ignore-gitleaks-allow --log-opts="$BASE_SHA..$HEAD_SHA" --no-banner --no-color --redact --log-level error /repo >"$log_file" 2>&1
           status=$?
           set -e
           rm -f -- "$log_file"
