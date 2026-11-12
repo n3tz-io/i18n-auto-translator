@@ -13,7 +13,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.423.0",
     "axios": "^1.7.9",
-    "dotenv": "^8.2.0",
+    "dotenv": "^18.0.10",
     "yargs": "^17.7.2"
   },
   "overrides": {
