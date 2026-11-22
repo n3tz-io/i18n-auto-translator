@@ -67,15 +67,36 @@ jobs:
         if: github.event_name == 'pull_request_target'
         env:
           PR_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_READ_TOKEN: ${{ github.token }}
         shell: bash
         working-directory: repo
         run: |
           set -Eeuo pipefail
           [[ "$PR_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
           git remote add pull-request "https://github.com/${PR_REPOSITORY}.git"
-          git fetch --no-tags pull-request "$HEAD_SHA"
+          if git cat-file -e "$HEAD_SHA^{commit}" 2>/dev/null; then
+            # Same-repository pull request: the head is already in the base clone, unchanged path.
+            git fetch --no-tags pull-request "$HEAD_SHA"
+          else
+            # Private fork: the head is not in the base clone and the checkout kept no credentials. Fetch it read-only,
+            # object data only (no checkout, hooks or PR code run here); the token is passed to the single fetch command
+            # and never persisted. Primary: GitHub's refs/pull/N/head in the BASE repository (no fork credentials).
+            # Fallback: the head repository itself. If neither delivers the commit, fail closed: never skip the scan.
+            auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_READ_TOKEN" | base64 -w0)"
+            echo "::add-mask::${auth#AUTHORIZATION: basic }"
+            git -c "http.https://github.com/.extraheader=$auth" fetch --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/origin/pr-head" >/dev/null 2>&1 || true
+            if ! git cat-file -e "$HEAD_SHA^{commit}" 2>/dev/null; then
+              git -c "http.https://github.com/.extraheader=$auth" fetch --no-tags pull-request "$HEAD_SHA" >/dev/null 2>&1 || true
+            fi
+            if ! git cat-file -e "$HEAD_SHA^{commit}" 2>/dev/null; then
+              echo "::error::Pull request head ${HEAD_SHA} from ${PR_REPOSITORY} is not reachable with the read-only token (tried refs/pull/${PR_NUMBER}/head of this repository, then the head repository). Scan refused, not skipped."
+              exit 1
+            fi
+          fi
           git checkout --detach "$HEAD_SHA"
 
       - name: Scan the exact pull request range
@@ -95,6 +116,8 @@ jobs:
           find repo -path repo/.git -prune -o -name .gitattributes -exec rm -rf -- {} +
           rm -f -- repo/.git/info/attributes
           git -C repo read-tree --empty
+          # -m: git log -p shows no diff for merge commits by default, so a secret that exists only in a merge
+          # resolution would never be scanned (review CF24-1, 22.11.2026). -m diffs each merge against every parent.
           log_file="$RUNNER_TEMP/gitleaks-pr.log"
           set +e
           docker run --rm --network=none \
@@ -102,7 +125,7 @@ jobs:
             --volume "$RUNNER_TEMP:/trusted:ro" \
             --workdir /repo \
             ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 \
-            git --config /trusted/gitleaks.toml --gitleaks-ignore-path /trusted/gitleaksignore --ignore-gitleaks-allow --log-opts="$BASE_SHA..$HEAD_SHA" \
+            git --config /trusted/gitleaks.toml --gitleaks-ignore-path /trusted/gitleaksignore --ignore-gitleaks-allow --log-opts="-m $BASE_SHA..$HEAD_SHA" \
             --no-banner --no-color --redact --log-level error /repo >"$log_file" 2>&1
           status=$?
           set -e
@@ -119,6 +142,7 @@ jobs:
           find repo -path repo/.git -prune -o -name .gitattributes -exec rm -rf -- {} +
           rm -f -- repo/.git/info/attributes
           git -C repo read-tree --empty
+          # -m: merge commits are scanned too (see the PR-range step).
           log_file="$RUNNER_TEMP/gitleaks-history.log"
           set +e
           docker run --rm --network=none \
@@ -126,7 +150,7 @@ jobs:
             --volume "$RUNNER_TEMP:/trusted:ro" \
             --workdir /repo \
             ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 \
-            git --config /trusted/gitleaks.toml --gitleaks-ignore-path /trusted/gitleaksignore --ignore-gitleaks-allow --log-opts="--all" \
+            git --config /trusted/gitleaks.toml --gitleaks-ignore-path /trusted/gitleaksignore --ignore-gitleaks-allow --log-opts="--all -m" \
             --no-banner --no-color --redact --log-level error /repo >"$log_file" 2>&1
           status=$?
           set -e
